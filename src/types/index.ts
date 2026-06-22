@@ -61,10 +61,19 @@ export interface QueueEntry {
   isSilentCalled: boolean;
   extensionMinutes: number;
   extensionReason?: string;
+  extensionStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  extensionHandledBy?: string;
   reminderMethod: ReminderMethod;
   appointmentId?: string;
   designatedConsultantId?: string;
   project?: string;
+  manualAdjustment?: {
+    adjustedBy: string;
+    adjustedAt: Date;
+    reason: string;
+    type: 'TOP' | 'BACK';
+  };
+  manualSortWeight?: number;
 }
 
 export interface Appointment {
@@ -139,5 +148,11 @@ export interface Notification {
   message: string;
   timestamp: Date;
   read: boolean;
+  handled: boolean;
   relatedQueueEntryId?: string;
+  action?: 'EXTENSION_REQUEST' | 'QUEUE_ADJUSTMENT';
+  actionData?: Record<string, any>;
+  handledBy?: string;
+  handledAt?: Date;
+  actionResult?: 'APPROVED' | 'REJECTED';
 }

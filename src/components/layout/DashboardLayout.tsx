@@ -13,6 +13,9 @@ import {
   Sparkles,
   ChevronDown,
   ExternalLink,
+  CheckCircle2,
+  XCircle,
+  Clock3,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { format } from 'date-fns';
@@ -28,12 +31,23 @@ const DashboardLayout = () => {
     markNotificationRead,
     getWaitingQueue,
     getInServiceEntries,
+    handleExtension,
   } = useAppStore();
 
   const waitingQueue = getWaitingQueue();
   const inServiceEntries = getInServiceEntries();
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const unhandledExtensionsCount = notifications.filter(
+    n => n.action === 'EXTENSION_REQUEST' && !n.handled
+  ).length;
+  
+  const isReception = currentUser?.role === 'ADMIN' || currentUser?.role === 'RECEPTION' || currentUser?.role === 'RECEPTIONIST';
+
+  const handleExtensionAction = (e: React.MouseEvent, notificationId: string, queueEntryId: string, result: 'APPROVED' | 'REJECTED') => {
+    e.stopPropagation();
+    handleExtension(notificationId, queueEntryId, result);
+  };
 
   useEffect(() => {
     if (!currentUser) {
@@ -183,6 +197,11 @@ const DashboardLayout = () => {
                     {unreadCount}
                   </span>
                 )}
+                {unhandledExtensionsCount > 0 && (
+                  <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-warm-gold text-deep-space text-[10px] rounded-full flex items-center justify-center animate-pulse-soft">
+                    {unhandledExtensionsCount}
+                  </span>
+                )}
               </button>
 
               {showNotifications && (
@@ -196,25 +215,77 @@ const DashboardLayout = () => {
                         暂无通知
                       </div>
                     ) : (
-                      notifications.slice(0, 10).map((notification) => (
-                        <div
-                          key={notification.id}
-                          onClick={() => markNotificationRead(notification.id)}
-                          className={`p-4 border-b border-rose-gold/5 hover:bg-deep-space-dark/50 cursor-pointer transition-colors ${
-                            !notification.read ? 'bg-rose-gold/5' : ''
-                          }`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className={`w-2 h-2 rounded-full mt-2 ${getNotificationTypeColor(notification.type)}`} />
-                            <div className="flex-1">
-                              <p className="text-ivory/80 text-sm">{notification.message}</p>
-                              <p className="text-ivory/40 text-xs mt-1">
-                                {format(notification.timestamp, 'HH:mm')}
-                              </p>
+                      notifications.slice(0, 10).map((notification) => {
+                        const isExtensionRequest = notification.action === 'EXTENSION_REQUEST';
+                        const canHandle = isExtensionRequest && !notification.handled && isReception;
+                        
+                        return (
+                          <div
+                            key={notification.id}
+                            onClick={() => markNotificationRead(notification.id)}
+                            className={`p-4 border-b border-rose-gold/5 hover:bg-deep-space-dark/50 transition-colors ${
+                              !notification.read ? 'bg-rose-gold/5' : ''
+                            } ${canHandle ? 'cursor-default' : 'cursor-pointer'}`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${getNotificationTypeColor(notification.type)}`} />
+                              <div className="flex-1 min-w-0">
+                                {canHandle && (
+                                  <div className="flex items-center gap-1 mb-2">
+                                    <Clock3 className="w-3 h-3 text-warm-gold" />
+                                    <span className="text-warm-gold text-xs">延长申请待处理</span>
+                                  </div>
+                                )}
+                                <p className="text-ivory/80 text-sm">{notification.message}</p>
+                                <div className="flex items-center justify-between mt-1">
+                                  <p className="text-ivory/40 text-xs">
+                                    {format(notification.timestamp, 'HH:mm')}
+                                  </p>
+                                  {notification.handled && (
+                                    <span className={`text-xs flex items-center gap-1 ${
+                                      notification.actionResult === 'APPROVED' ? 'text-matcha' : 'text-rose-red/80'
+                                    }`}>
+                                      {notification.actionResult === 'APPROVED' 
+                                        ? <><CheckCircle2 className="w-3 h-3" />已同意</>
+                                        : <><XCircle className="w-3 h-3" />已驳回</>
+                                      }
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {canHandle && notification.relatedQueueEntryId && (
+                                  <div className="flex gap-2 mt-3 pt-3 border-t border-rose-gold/10">
+                                    <button
+                                      onClick={(e) => handleExtensionAction(
+                                        e, 
+                                        notification.id, 
+                                        notification.relatedQueueEntryId!, 
+                                        'APPROVED'
+                                      )}
+                                      className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-matcha/10 text-matcha hover:bg-matcha/20 transition-colors text-xs"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                      同意
+                                    </button>
+                                    <button
+                                      onClick={(e) => handleExtensionAction(
+                                        e, 
+                                        notification.id, 
+                                        notification.relatedQueueEntryId!, 
+                                        'REJECTED'
+                                      )}
+                                      className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-rose-red/10 text-rose-red hover:bg-rose-red/20 transition-colors text-xs"
+                                    >
+                                      <XCircle className="w-3.5 h-3.5" />
+                                      驳回
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>

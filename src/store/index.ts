@@ -43,12 +43,13 @@ interface AppState {
   assignRoom: (queueEntryId: string, roomId: string) => void;
   triggerSilentCall: (queueEntryId: string) => void;
   requestExtension: (queueEntryId: string, minutes: number, reason: string) => void;
+  handleExtension: (notificationId: string, queueEntryId: string, result: 'APPROVED' | 'REJECTED') => void;
   completeService: (queueEntryId: string, record: Omit<ServiceRecord, 'id' | 'createdAt'>) => void;
   updateRoomStatus: (roomId: string, status: RoomStatus, progress?: number) => void;
   getSortedQueue: () => QueueEntry[];
   getWaitingQueue: () => QueueEntry[];
   getInServiceEntries: () => QueueEntry[];
-  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void;
+  addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read' | 'handled'>) => void;
   markNotificationRead: (id: string) => void;
   generateCodeName: () => string;
   findCustomerByMemberId: (memberId: string) => Customer | undefined;
@@ -61,6 +62,8 @@ interface AppState {
   updateWaitTimes: () => void;
   addCustomer: (customer: Customer) => void;
   hasCheckedInAppointment: (appointmentId: string) => boolean;
+  adjustQueuePosition: (queueEntryId: string, type: 'TOP' | 'BACK', reason: string) => void;
+  updateAppointmentStatus: (appointmentId: string, status: 'PENDING' | 'CHECKED_IN' | 'CANCELLED') => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -103,7 +106,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       waitTime: 0,
       extensionMinutes: 0,
       isSilentCalled: false,
+      manualSortWeight: 0,
     };
+    
+    if (entry.appointmentId) {
+      get().updateAppointmentStatus(entry.appointmentId, 'CHECKED_IN');
+    }
     
     set(state => {
       const newEntries = [...state.queueEntries, newEntry];
@@ -185,19 +193,71 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   requestExtension: (id, minutes, reason) => {
+    const consultantName = get().currentUser?.name || '咨询顾问';
+    
     set(state => ({
       queueEntries: state.queueEntries.map(e =>
-        e.id === id ? { ...e, extensionMinutes: minutes, extensionReason: reason } : e
+        e.id === id ? { 
+          ...e, 
+          extensionMinutes: minutes, 
+          extensionReason: reason,
+          extensionStatus: 'PENDING',
+        } : e
       ),
     }));
     
     const entry = get().queueEntries.find(e => e.id === id);
     const customer = entry ? get().getCustomerById(entry.customerId) : null;
     
-    get().addNotification({
+    const notificationId = `notif${Date.now()}`;
+    const newNotification: Notification = {
+      id: notificationId,
       type: 'WARNING',
-      message: `「${customer?.codeName || '贵宾'}」的顾问申请延长${minutes}分钟，原因：${reason}`,
+      message: `「${customer?.codeName || '贵宾'}」的${consultantName}申请延长${minutes}分钟，原因：${reason}`,
+      timestamp: new Date(),
+      read: false,
+      handled: false,
       relatedQueueEntryId: id,
+      action: 'EXTENSION_REQUEST',
+      actionData: { minutes, reason, consultantName },
+    };
+    
+    set(state => ({
+      notifications: [newNotification, ...state.notifications].slice(0, 50),
+    }));
+  },
+
+  handleExtension: (notificationId, queueEntryId, result) => {
+    const handlerName = get().currentUser?.name || '前台管家';
+    const entry = get().queueEntries.find(e => e.id === queueEntryId);
+    const customer = entry ? get().getCustomerById(entry.customerId) : null;
+    
+    set(state => ({
+      queueEntries: state.queueEntries.map(e =>
+        e.id === queueEntryId ? {
+          ...e,
+          extensionStatus: result,
+          extensionHandledBy: handlerName,
+          extensionMinutes: result === 'APPROVED' ? e.extensionMinutes : 0,
+          extensionReason: result === 'APPROVED' ? e.extensionReason : undefined,
+        } : e
+      ),
+      notifications: state.notifications.map(n =>
+        n.id === notificationId ? {
+          ...n,
+          handled: true,
+          handledBy: handlerName,
+          handledAt: new Date(),
+          actionResult: result,
+          read: true,
+        } : n
+      ),
+    }));
+    
+    get().addNotification({
+      type: result === 'APPROVED' ? 'SUCCESS' : 'INFO',
+      message: `延长申请已${result === 'APPROVED' ? '同意' : '驳回'}：「${customer?.codeName || '贵宾'}」`,
+      relatedQueueEntryId: queueEntryId,
     });
   },
 
@@ -261,6 +321,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       id: `notif${Date.now()}`,
       timestamp: new Date(),
       read: false,
+      handled: false,
     };
     set(state => ({
       notifications: [newNotification, ...state.notifications].slice(0, 50),
@@ -330,6 +391,60 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   hasCheckedInAppointment: (appointmentId) => {
-    return get().queueEntries.some(e => e.appointmentId === appointmentId && e.status !== 'COMPLETED');
+    const appointment = get().appointments.find(a => a.id === appointmentId);
+    return appointment?.status === 'CHECKED_IN' || 
+      get().queueEntries.some(e => e.appointmentId === appointmentId);
+  },
+
+  adjustQueuePosition: (queueEntryId, type, reason) => {
+    const handlerName = get().currentUser?.name || '前台管家';
+    const entry = get().queueEntries.find(e => e.id === queueEntryId);
+    const customer = entry ? get().getCustomerById(entry.customerId) : null;
+    
+    const maxWeight = Math.max(...get().queueEntries.map(e => e.manualSortWeight || 0), 0);
+    
+    set(state => ({
+      queueEntries: state.queueEntries.map(e => {
+        if (e.id === queueEntryId) {
+          return {
+            ...e,
+            manualSortWeight: type === 'TOP' ? maxWeight + 1000 : -1000,
+            manualAdjustment: {
+              adjustedBy: handlerName,
+              adjustedAt: new Date(),
+              reason,
+              type,
+            },
+          };
+        }
+        return e;
+      }),
+    }));
+    
+    set(state => {
+      const sorted = sortQueue(state.queueEntries, state.customers, state.appointments);
+      return {
+        queueEntries: state.queueEntries.map(e => {
+          const sortedEntry = sorted.find(s => s.id === e.id);
+          return sortedEntry ? { ...e, position: sortedEntry.position } : e;
+        }),
+      };
+    });
+    
+    get().addNotification({
+      type: 'INFO',
+      message: `队列顺序已调整：「${customer?.codeName || '贵宾'}」${type === 'TOP' ? '置顶' : '延后'}，原因：${reason}`,
+      relatedQueueEntryId: queueEntryId,
+      action: 'QUEUE_ADJUSTMENT',
+      actionData: { type, reason, handlerName },
+    });
+  },
+
+  updateAppointmentStatus: (appointmentId, status) => {
+    set(state => ({
+      appointments: state.appointments.map(a =>
+        a.id === appointmentId ? { ...a, status } : a
+      ),
+    }));
   },
 }));

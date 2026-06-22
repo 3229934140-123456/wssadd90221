@@ -21,6 +21,7 @@ export default {
         'matcha': '#7D8471',
         'warm-gold': '#C9A961',
         'warm-gold-light': '#DBC080',
+        'rose-red': '#C4656A',
       },
       fontFamily: {
         serif: ['"Noto Serif SC"', 'serif'],
@@ -31,6 +32,7 @@ export default {
         'fade-in': 'fade-in 0.8s ease-out',
         'slide-up': 'slide-up 0.6s ease-out',
         'breathe': 'breathe 4s ease-in-out infinite',
+        'slide-in-right': 'slide-in-right 0.4s ease-out',
       },
       keyframes: {
         'pulse-soft': {
@@ -48,6 +50,10 @@ export default {
         'breathe': {
           '0%, 100%': { transform: 'scale(1)', opacity: '0.8' },
           '50%': { transform: 'scale(1.05)', opacity: '1' },
+        },
+        'slide-in-right': {
+          '0%': { transform: 'translateX(100%)', opacity: '0' },
+          '100%': { transform: 'translateX(0)', opacity: '1' },
         },
       },
       boxShadow: {

@@ -18,6 +18,10 @@ export const sortQueue = (
       if (a.status === 'CONSULTANT_PREPARING' && b.status !== 'CONSULTANT_PREPARING') return -1;
       if (b.status === 'CONSULTANT_PREPARING' && a.status !== 'CONSULTANT_PREPARING') return 1;
       
+      const manualA = a.manualSortWeight || 0;
+      const manualB = b.manualSortWeight || 0;
+      if (manualA !== manualB) return manualB - manualA;
+      
       if (a.isStandby && !b.isStandby) return 1;
       if (!a.isStandby && b.isStandby) return -1;
       

@@ -56,7 +56,7 @@ export default function App() {
             </RoleRoute>
           } />
           <Route path="queue" element={
-            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION']}>
+            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT']}>
               <QueueManagement />
             </RoleRoute>
           } />

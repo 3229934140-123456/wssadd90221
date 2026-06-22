@@ -59,6 +59,8 @@ interface AppState {
   getIdleRooms: () => Room[];
   getIdleConsultants: () => Consultant[];
   updateWaitTimes: () => void;
+  addCustomer: (customer: Customer) => void;
+  hasCheckedInAppointment: (appointmentId: string) => boolean;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -319,5 +321,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         return e;
       }),
     }));
+  },
+
+  addCustomer: (customer) => {
+    set(state => ({
+      customers: [...state.customers, customer],
+    }));
+  },
+
+  hasCheckedInAppointment: (appointmentId) => {
+    return get().queueEntries.some(e => e.appointmentId === appointmentId && e.status !== 'COMPLETED');
   },
 }));

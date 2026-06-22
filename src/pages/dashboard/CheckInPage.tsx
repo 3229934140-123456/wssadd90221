@@ -18,6 +18,8 @@ const CheckInPage = () => {
     settings,
     addNotification,
     getCustomerById,
+    addCustomer,
+    hasCheckedInAppointment,
   } = useAppStore();
 
   const [searchType, setSearchType] = useState<'member' | 'appointment' | 'standby'>('member');
@@ -52,6 +54,11 @@ const CheckInPage = () => {
     } else if (searchType === 'appointment') {
       const appointment = findAppointmentByCode(searchValue.toUpperCase());
       if (appointment) {
+        if (hasCheckedInAppointment(appointment.id)) {
+          const customer = getCustomerById(appointment.customerId);
+          setError(`「${customer?.codeName || '贵宾'}」已使用该预约码签到过，请勿重复操作`);
+          return;
+        }
         setFoundAppointment(appointment);
         const customer = getCustomerById(appointment.customerId);
         if (customer) setFoundCustomer(customer);
@@ -124,17 +131,20 @@ const CheckInPage = () => {
       return;
     }
 
+    const codeName = generateCodeName();
+    
     const newCustomer: Customer = {
       id: `c${Date.now()}`,
       name: standbyForm.name,
       phone: standbyForm.phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2'),
       level: standbyForm.level,
-      codeName: generateCodeName(),
+      codeName: codeName,
       teaPreference: standbyForm.teaPreference,
       isSensitive: standbyForm.isSensitive,
       totalVisits: 1,
     };
 
+    addCustomer(newCustomer);
     handleCheckIn(newCustomer);
   };
 

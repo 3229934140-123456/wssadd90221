@@ -15,25 +15,39 @@ export const sortQueue = (
       const aptA = appointments.find(ap => ap.id === a.appointmentId);
       const aptB = appointments.find(ap => ap.id === b.appointmentId);
       
-      let scoreA = levelWeight[customerA.level];
-      let scoreB = levelWeight[customerB.level];
-      
-      if (a.designatedConsultantId) scoreA += 30;
-      if (b.designatedConsultantId) scoreB += 30;
-      
-      if (customerA.isSensitive) scoreA += 25;
-      if (customerB.isSensitive) scoreB += 25;
-      
-      if (aptA) scoreA += 15;
-      if (aptB) scoreB += 15;
-      
-      if (a.isStandby) scoreA -= 20;
-      if (b.isStandby) scoreB -= 20;
-      
       if (a.status === 'CONSULTANT_PREPARING' && b.status !== 'CONSULTANT_PREPARING') return -1;
       if (b.status === 'CONSULTANT_PREPARING' && a.status !== 'CONSULTANT_PREPARING') return 1;
       
+      if (a.isStandby && !b.isStandby) return 1;
+      if (!a.isStandby && b.isStandby) return -1;
+      
+      let scoreA = levelWeight[customerA.level];
+      let scoreB = levelWeight[customerB.level];
+      
+      if (a.designatedConsultantId) scoreA += 40;
+      if (b.designatedConsultantId) scoreB += 40;
+      
+      if (customerA.isSensitive) scoreA += 30;
+      if (customerB.isSensitive) scoreB += 30;
+      
+      if (aptA && aptB) {
+        const timeDiff = aptA.appointmentTime.getTime() - aptB.appointmentTime.getTime();
+        if (Math.abs(timeDiff) > 30 * 60000) {
+          return timeDiff;
+        }
+        scoreA += 20;
+        scoreB += 20;
+      } else if (aptA) {
+        scoreA += 20;
+      } else if (aptB) {
+        scoreB += 20;
+      }
+      
       if (scoreA !== scoreB) return scoreB - scoreA;
+      
+      if (aptA && aptB) {
+        return aptA.appointmentTime.getTime() - aptB.appointmentTime.getTime();
+      }
       
       return a.checkinTime.getTime() - b.checkinTime.getTime();
     })

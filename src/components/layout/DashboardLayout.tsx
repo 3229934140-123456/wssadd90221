@@ -50,7 +50,7 @@ const DashboardLayout = () => {
     { icon: LayoutDashboard, label: '首页看板', path: '/dashboard' },
     { icon: UserPlus, label: '贵宾签到', path: '/dashboard/checkin' },
     { icon: Users, label: '队列管理', path: '/dashboard/queue' },
-    { icon: UserCheck, label: '顾问分配', path: '/dashboard/consultants' },
+    { icon: UserCheck, label: '顾问分配', path: '/dashboard/assignment' },
     { icon: DoorOpen, label: '包间状态', path: '/dashboard/rooms' },
     { icon: FileText, label: '服务记录', path: '/dashboard/records' },
   ];

@@ -15,12 +15,12 @@ export const sortQueue = (
       const aptA = appointments.find(ap => ap.id === a.appointmentId);
       const aptB = appointments.find(ap => ap.id === b.appointmentId);
       
-      if (a.status === 'CONSULTANT_PREPARING' && b.status !== 'CONSULTANT_PREPARING') return -1;
-      if (b.status === 'CONSULTANT_PREPARING' && a.status !== 'CONSULTANT_PREPARING') return 1;
-      
       const manualA = a.manualSortWeight || 0;
       const manualB = b.manualSortWeight || 0;
       if (manualA !== manualB) return manualB - manualA;
+      
+      if (a.status === 'CONSULTANT_PREPARING' && b.status !== 'CONSULTANT_PREPARING') return -1;
+      if (b.status === 'CONSULTANT_PREPARING' && a.status !== 'CONSULTANT_PREPARING') return 1;
       
       if (a.isStandby && !b.isStandby) return 1;
       if (!a.isStandby && b.isStandby) return -1;
@@ -57,7 +57,7 @@ export const sortQueue = (
     })
     .map((entry, index) => ({
       ...entry,
-      position: entry.status === 'CONSULTANT_PREPARING' ? 1 : index + 1,
+      position: index + 1,
     }));
 };
 

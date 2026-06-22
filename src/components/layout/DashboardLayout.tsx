@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock3,
+  ClipboardList,
+  CalendarDays,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { format } from 'date-fns';
@@ -61,13 +63,19 @@ const DashboardLayout = () => {
   };
 
   const menuItems = [
-    { icon: LayoutDashboard, label: '首页看板', path: '/dashboard' },
-    { icon: UserPlus, label: '贵宾签到', path: '/dashboard/checkin' },
-    { icon: Users, label: '队列管理', path: '/dashboard/queue' },
-    { icon: UserCheck, label: '顾问分配', path: '/dashboard/assignment' },
-    { icon: DoorOpen, label: '包间状态', path: '/dashboard/rooms' },
-    { icon: FileText, label: '服务记录', path: '/dashboard/records' },
+    { icon: LayoutDashboard, label: '首页看板', path: '/dashboard', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT'] },
+    { icon: UserPlus, label: '贵宾签到', path: '/dashboard/checkin', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST'] },
+    { icon: Users, label: '队列管理', path: '/dashboard/queue', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT'] },
+    { icon: CalendarDays, label: '排班视图', path: '/dashboard/schedule', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT'] },
+    { icon: UserCheck, label: '顾问分配', path: '/dashboard/assignment', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST'] },
+    { icon: DoorOpen, label: '包间状态', path: '/dashboard/rooms', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST'] },
+    { icon: ClipboardList, label: '今日复盘', path: '/dashboard/review', roles: ['ADMIN', 'RECEPTION', 'RECEPTIONIST'] },
+    { icon: FileText, label: '服务记录', path: '/dashboard/records', roles: ['ADMIN', 'CONSULTANT'] },
   ];
+
+  const filteredMenuItems = menuItems.filter(item => 
+    currentUser && item.roles.includes(currentUser.role)
+  );
 
   const getNotificationTypeColor = (type: string) => {
     switch (type) {
@@ -93,7 +101,7 @@ const DashboardLayout = () => {
 
         <nav className="flex-1 py-6 px-4">
           <ul className="space-y-1">
-            {menuItems.map((item) => {
+            {filteredMenuItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
               return (

@@ -85,9 +85,12 @@ const CheckInPage = () => {
     }
   };
 
+  const [viewedDetails, setViewedDetails] = useState(false);
+
   const openDetailDrawer = () => {
     setShowDetailDrawer(true);
     setCheckinForm(prev => ({ ...prev, privacyNotes: '' }));
+    setViewedDetails(true);
   };
 
   const handleCheckIn = (customer: Customer, appointmentId?: string, designatedConsultantId?: string) => {
@@ -111,6 +114,14 @@ const CheckInPage = () => {
       project: projectInfo,
       privacyNotes: searchType === 'standby' ? '' : checkinForm.privacyNotes,
     });
+
+    if (viewedDetails && searchType !== 'standby') {
+      addTimelineEvent(entry.id, {
+        type: 'VIEW_DETAILS',
+        description: '前台查看到店详情',
+        operator: '前台管家',
+      });
+    }
 
     if (checkinForm.privacyNotes && searchType !== 'standby') {
       addTimelineEvent(entry.id, {

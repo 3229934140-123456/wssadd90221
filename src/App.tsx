@@ -10,6 +10,8 @@ import ConsultantAssignment from "@/pages/dashboard/ConsultantAssignment";
 import RoomManagement from "@/pages/dashboard/RoomManagement";
 import ServiceRecords from "@/pages/dashboard/ServiceRecords";
 import SettingsPage from "@/pages/dashboard/SettingsPage";
+import DailyReviewPage from "@/pages/dashboard/DailyReviewPage";
+import ConsultantSchedulePage from "@/pages/dashboard/ConsultantSchedulePage";
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isLoggedIn } = useAppStore();
@@ -80,6 +82,16 @@ export default function App() {
             <ProtectedRoute>
               <SettingsPage />
             </ProtectedRoute>
+          } />
+          <Route path="review" element={
+            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION', 'RECEPTIONIST']}>
+              <DailyReviewPage />
+            </RoleRoute>
+          } />
+          <Route path="schedule" element={
+            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT']}>
+              <ConsultantSchedulePage />
+            </RoleRoute>
           } />
         </Route>
 

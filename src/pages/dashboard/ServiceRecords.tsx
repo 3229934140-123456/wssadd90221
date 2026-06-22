@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { FileText, Star, Gift, Calendar, Check, X } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { FileText, Star, Gift, Calendar, Check, X, Clock, Shield, UserCheck, Coffee, AlertCircle, Info, CheckCircle2, XCircle, Headphones, ArrowDown } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { format } from 'date-fns';
+import type { TimelineEventType } from '@/types';
 
 const ServiceRecords = () => {
   const {
@@ -11,9 +12,12 @@ const ServiceRecords = () => {
     completeService,
     serviceRecords,
     addNotification,
+    getTimelineForEntry,
+    queueEntries,
   } = useAppStore();
 
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     experienceRating: 5,
     compensation: [] as string[],
@@ -93,6 +97,56 @@ const ServiceRecords = () => {
     );
   };
 
+  const getTimelineIcon = (type: TimelineEventType) => {
+    switch (type) {
+      case 'CHECKIN': return <UserCheck className="w-3 h-3" />;
+      case 'VIEW_DETAILS': return <Info className="w-3 h-3" />;
+      case 'CONFIRM_CHECKIN': return <CheckCircle2 className="w-3 h-3" />;
+      case 'CONSULTANT_PREPARE': return <UserCheck className="w-3 h-3" />;
+      case 'START_SERVICE': return <Coffee className="w-3 h-3" />;
+      case 'EXTENSION_REQUEST': return <Clock className="w-3 h-3" />;
+      case 'EXTENSION_APPROVED': return <CheckCircle2 className="w-3 h-3" />;
+      case 'EXTENSION_REJECTED': return <XCircle className="w-3 h-3" />;
+      case 'TEA_DELIVERED': return <Coffee className="w-3 h-3" />;
+      case 'SILENT_CALLED': return <Headphones className="w-3 h-3" />;
+      case 'QUEUE_ADJUSTED': return <ArrowDown className="w-3 h-3" />;
+      case 'COMPLETE_SERVICE': return <CheckCircle2 className="w-3 h-3" />;
+      case 'SOOTHE_SERVICE': return <Gift className="w-3 h-3" />;
+      default: return <Clock className="w-3 h-3" />;
+    }
+  };
+
+  const getTimelineColor = (type: TimelineEventType) => {
+    switch (type) {
+      case 'CHECKIN':
+      case 'CONFIRM_CHECKIN':
+      case 'START_SERVICE':
+      case 'COMPLETE_SERVICE':
+        return 'bg-matcha/20 text-matcha border-matcha/30';
+      case 'CONSULTANT_PREPARE':
+        return 'bg-rose-gold/20 text-rose-gold border-rose-gold/30';
+      case 'EXTENSION_REQUEST':
+        return 'bg-warm-gold/20 text-warm-gold border-warm-gold/30';
+      case 'EXTENSION_APPROVED':
+        return 'bg-matcha/20 text-matcha border-matcha/30';
+      case 'EXTENSION_REJECTED':
+        return 'bg-rose-red/20 text-rose-red border-rose-red/30';
+      case 'QUEUE_ADJUSTED':
+        return 'bg-slate-blue/20 text-slate-blue border-slate-blue/30';
+      case 'SOOTHE_SERVICE':
+        return 'bg-warm-gold/20 text-warm-gold border-warm-gold/30';
+      default:
+        return 'bg-deep-space-dark/50 text-ivory/60 border-ivory/10';
+    }
+  };
+
+  const selectedEntryData = selectedEntry ? {
+    entry: getInServiceEntries().find(e => e.id === selectedEntry) || queueEntries.find(e => e.id === selectedEntry),
+    timeline: getTimelineForEntry(selectedEntry),
+  } : null;
+
+  const selectedRecord = selectedRecordId ? serviceRecords.find(r => r.id === selectedRecordId) : null;
+
   return (
     <div className="grid grid-cols-2 gap-8 animate-fade-in">
       <div className="space-y-6">
@@ -116,7 +170,7 @@ const ServiceRecords = () => {
                 return (
                   <div
                     key={entry.id}
-                    onClick={() => setSelectedEntry(entry.id)}
+                    onClick={() => { setSelectedEntry(entry.id); setSelectedRecordId(null); }}
                     className={`p-5 rounded-xl transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-rose-gold/10 border-2 border-rose-gold/30'
@@ -149,7 +203,7 @@ const ServiceRecords = () => {
                       </div>
                       <div className="text-right">
                         <p className="text-ivory/60 text-sm">
-                          {format(entry.checkinTime, 'HH:mm')} 开始
+                          {entry.serviceStartTime ? format(new Date(entry.serviceStartTime), 'HH:mm') : format(entry.checkinTime, 'HH:mm')} 开始
                         </p>
                         {entry.extensionMinutes > 0 && (
                           <p className="text-warm-gold text-xs mt-1">
@@ -158,6 +212,16 @@ const ServiceRecords = () => {
                         )}
                       </div>
                     </div>
+
+                    {entry.privacyNotes && (
+                      <div className="mt-3 p-3 bg-rose-gold/5 border border-rose-gold/20 rounded-lg">
+                        <p className="text-rose-gold/70 text-xs mb-1 flex items-center gap-1">
+                          <Shield className="w-3 h-3" />
+                          隐私交接备注
+                        </p>
+                        <p className="text-ivory/70 text-sm">{entry.privacyNotes}</p>
+                      </div>
+                    )}
 
                     {entry.extensionReason && (
                       <div className="mt-3 p-3 bg-warm-gold/5 rounded-lg">
@@ -181,11 +245,15 @@ const ServiceRecords = () => {
               {serviceRecords.slice(0, 5).map((record, index) => {
                 const customer = getCustomerById(record.customerId);
                 const consultant = getConsultantById(record.consultantId);
+                const isSelected = selectedRecordId === record.id;
                 
                 return (
                   <div
                     key={record.id}
-                    className="p-4 rounded-xl bg-deep-space-dark/30"
+                    onClick={() => { setSelectedRecordId(record.id); setSelectedEntry(null); }}
+                    className={`p-4 rounded-xl cursor-pointer transition-all ${
+                      isSelected ? 'bg-matcha/10 border border-matcha/30' : 'bg-deep-space-dark/30 hover:bg-deep-space-dark/50'
+                    }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-ivory/80">
@@ -200,6 +268,12 @@ const ServiceRecords = () => {
                       <span>·</span>
                       <span>{record.actualDuration} 分钟</span>
                     </div>
+                    {record.privacyNotes && (
+                      <div className="mt-2 flex items-center gap-1 text-rose-gold/60 text-xs">
+                        <Shield className="w-3 h-3" />
+                        <span>含隐私交接备注</span>
+                      </div>
+                    )}
                     {record.compensation.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {record.compensation.map((c, i) => (
@@ -223,18 +297,164 @@ const ServiceRecords = () => {
             <FileText className="w-5 h-5 text-rose-gold" />
           </div>
           <div>
-            <h3 className="font-serif text-xl text-ivory/90 tracking-wider">服务完成记录</h3>
-            <p className="text-ivory/40 text-sm">记录接待体验与后续安排</p>
+            <h3 className="font-serif text-xl text-ivory/90 tracking-wider">
+              {selectedRecordId ? '历史服务记录详情' : '服务完成记录'}
+            </h3>
+            <p className="text-ivory/40 text-sm">
+              {selectedRecordId ? '查看该次服务完整信息' : '记录接待体验与后续安排'}
+            </p>
           </div>
         </div>
 
-        {!selectedEntry ? (
+        {!selectedEntry && !selectedRecordId ? (
           <div className="text-center py-16 text-ivory/40">
             <FileText className="w-16 h-16 mx-auto mb-4 opacity-30" />
-            <p>请从左侧选择要完成的服务</p>
+            <p>请从左侧选择要记录或查看的服务</p>
           </div>
-        ) : (
+        ) : selectedRecord ? (
           <div className="space-y-6">
+            {selectedRecord.timeline && selectedRecord.timeline.length > 0 && (
+              <div>
+                <h4 className="text-ivory/70 text-sm mb-4 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  完整接待时间线
+                </h4>
+                <div className="space-y-3 pl-4 border-l-2 border-rose-gold/20 max-h-60 overflow-y-auto scrollbar-hide pr-2">
+                  {selectedRecord.timeline.map((event) => (
+                    <div key={event.id} className="relative">
+                      <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full border-2 border-deep-space-dark bg-rose-gold flex items-center justify-center">
+                        <div className={`w-3 h-3 rounded-full flex items-center justify-center ${getTimelineColor(event.type as TimelineEventType).split(' ')[0]}`}>
+                          {getTimelineIcon(event.type as TimelineEventType)}
+                        </div>
+                      </div>
+                      <div className="bg-deep-space-dark/30 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-ivory/90 text-sm font-medium">{event.description}</p>
+                          <p className="text-ivory/40 text-xs">{format(new Date(event.timestamp), 'HH:mm:ss')}</p>
+                        </div>
+                        {event.operator && (
+                          <p className="text-ivory/50 text-xs">操作人：{event.operator}</p>
+                        )}
+                        {event.details && (
+                          <p className="text-ivory/60 text-xs mt-1">{event.details}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedRecord.privacyNotes && (
+              <div className="p-4 bg-rose-gold/5 border border-rose-gold/20 rounded-lg">
+                <h5 className="text-rose-gold text-sm mb-2 flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  隐私交接备注
+                </h5>
+                <p className="text-ivory/70 text-sm">{selectedRecord.privacyNotes}</p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-ivory/70 text-sm mb-3 font-light">接待体验评分</label>
+              <div className="flex items-center gap-4">
+                {renderStars(selectedRecord.experienceRating)}
+                <span className="text-ivory/50 text-sm">
+                  {selectedRecord.experienceRating === 5 ? '非常满意' :
+                   selectedRecord.experienceRating === 4 ? '满意' :
+                   selectedRecord.experienceRating === 3 ? '一般' :
+                   selectedRecord.experienceRating === 2 ? '不满意' : '非常不满意'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-3 bg-deep-space-dark/30 rounded-lg">
+                <p className="text-ivory/40 text-xs mb-1">实际沟通时长</p>
+                <p className="text-ivory/80">{selectedRecord.actualDuration} 分钟</p>
+              </div>
+              <div className="p-3 bg-deep-space-dark/30 rounded-lg">
+                <p className="text-ivory/40 text-xs mb-1">完成时间</p>
+                <p className="text-ivory/80">{format(new Date(selectedRecord.createdAt), 'HH:mm')}</p>
+              </div>
+            </div>
+
+            {selectedRecord.compensation.length > 0 && (
+              <div>
+                <label className="flex items-center gap-2 text-ivory/70 text-sm mb-3 font-light">
+                  <Gift className="w-4 h-4 text-warm-gold" />
+                  等待补偿措施
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {selectedRecord.compensation.map((c, i) => (
+                    <span key={i} className="px-3 py-1.5 bg-warm-gold/10 text-warm-gold/70 text-xs rounded-lg">
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedRecord.notes && (
+              <div>
+                <label className="block text-ivory/70 text-sm mb-3 font-light">备注</label>
+                <p className="text-ivory/60 text-sm bg-deep-space-dark/30 rounded-lg p-3">
+                  {selectedRecord.notes}
+                </p>
+              </div>
+            )}
+
+            <button
+              onClick={() => setSelectedRecordId(null)}
+              className="w-full luxury-button mt-4"
+            >
+              返回记录列表
+            </button>
+          </div>
+        ) : selectedEntryData && selectedEntryData.entry ? (
+          <div className="space-y-6">
+            {selectedEntryData.timeline.length > 0 && (
+              <div>
+                <h4 className="text-ivory/70 text-sm mb-4 flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  当前接待时间线
+                </h4>
+                <div className="space-y-3 pl-4 border-l-2 border-rose-gold/20 max-h-48 overflow-y-auto scrollbar-hide pr-2">
+                  {selectedEntryData.timeline.map((event) => (
+                    <div key={event.id} className="relative">
+                      <div className="absolute -left-[21px] top-0 w-4 h-4 rounded-full border-2 border-deep-space-dark bg-rose-gold flex items-center justify-center">
+                        <div className={`w-3 h-3 rounded-full flex items-center justify-center ${getTimelineColor(event.type as TimelineEventType).split(' ')[0]}`}>
+                          {getTimelineIcon(event.type as TimelineEventType)}
+                        </div>
+                      </div>
+                      <div className="bg-deep-space-dark/30 rounded-lg p-3">
+                        <div className="flex items-center justify-between mb-1">
+                          <p className="text-ivory/90 text-sm font-medium">{event.description}</p>
+                          <p className="text-ivory/40 text-xs">{format(new Date(event.timestamp), 'HH:mm:ss')}</p>
+                        </div>
+                        {event.operator && (
+                          <p className="text-ivory/50 text-xs">操作人：{event.operator}</p>
+                        )}
+                        {event.details && (
+                          <p className="text-ivory/60 text-xs mt-1">{event.details}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedEntryData.entry.privacyNotes && (
+              <div className="p-4 bg-rose-gold/5 border border-rose-gold/20 rounded-lg">
+                <h5 className="text-rose-gold text-sm mb-2 flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  隐私交接备注
+                </h5>
+                <p className="text-ivory/70 text-sm">{selectedEntryData.entry.privacyNotes}</p>
+              </div>
+            )}
+
             <div>
               <label className="block text-ivory/70 text-sm mb-3 font-light">接待体验评分</label>
               <div className="flex items-center gap-4">
@@ -327,7 +547,7 @@ const ServiceRecords = () => {
               </button>
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

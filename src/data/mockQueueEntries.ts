@@ -1,6 +1,25 @@
-import type { QueueEntry } from '@/types';
+import type { QueueEntry, TimelineEventType } from '@/types';
 
 const now = new Date();
+
+interface MockTimelineEvent {
+  type: TimelineEventType;
+  desc: string;
+  minsAgo: number;
+  operator?: string;
+  details?: string;
+}
+
+const createTimeline = (events: MockTimelineEvent[]) => {
+  return events.map((e, i) => ({
+    id: `tl_mock_${i}_${e.type}`,
+    type: e.type,
+    timestamp: new Date(now.getTime() - e.minsAgo * 60000),
+    description: e.desc,
+    operator: e.operator,
+    details: e.details,
+  }));
+};
 
 export const mockQueueEntries: QueueEntry[] = [
   {
@@ -11,6 +30,8 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'IN_SERVICE',
     teaStatus: 'DELIVERED',
     checkinTime: new Date(now.getTime() - 35 * 60000),
+    serviceStartTime: new Date(now.getTime() - 25 * 60000),
+    estimatedEndTime: new Date(now.getTime() + 35 * 60000),
     waitTime: 8,
     position: 0,
     isStandby: false,
@@ -19,6 +40,15 @@ export const mockQueueEntries: QueueEntry[] = [
     reminderMethod: 'HEADSET',
     appointmentId: 'apt001',
     project: '面部综合抗衰',
+    manualSortWeight: 0,
+    privacyNotes: '顾客希望走VIP通道，不要经过大厅等候区',
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 35, operator: '李管家' },
+      { type: 'CONFIRM_CHECKIN', desc: '确认签到（含隐私备注）', minsAgo: 34, operator: '李管家', details: '顾客希望走VIP通道' },
+      { type: 'CONSULTANT_PREPARE', desc: '顾问准备中', minsAgo: 28, operator: '李管家' },
+      { type: 'START_SERVICE', desc: '进入服务', minsAgo: 25, operator: '王顾问' },
+      { type: 'TEA_DELIVERED', desc: '茶点已送达', minsAgo: 22, operator: '张服务员' },
+    ]),
   },
   {
     id: 'q002',
@@ -28,6 +58,8 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'IN_SERVICE',
     teaStatus: 'DELIVERED',
     checkinTime: new Date(now.getTime() - 25 * 60000),
+    serviceStartTime: new Date(now.getTime() - 15 * 60000),
+    estimatedEndTime: new Date(now.getTime() + 15 * 60000),
     waitTime: 12,
     position: 0,
     isStandby: false,
@@ -36,6 +68,12 @@ export const mockQueueEntries: QueueEntry[] = [
     reminderMethod: 'HEADSET',
     appointmentId: 'apt002',
     project: '皮肤护理套餐',
+    manualSortWeight: 0,
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 25, operator: '张管家' },
+      { type: 'CONSULTANT_PREPARE', desc: '顾问准备中', minsAgo: 18, operator: '张管家' },
+      { type: 'START_SERVICE', desc: '进入服务', minsAgo: 15, operator: '陈顾问' },
+    ]),
   },
   {
     id: 'q003',
@@ -44,6 +82,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'CONSULTANT_PREPARING',
     teaStatus: 'PREPARING',
     checkinTime: new Date(now.getTime() - 18 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 5 * 60000),
     waitTime: 18,
     position: 1,
     isStandby: false,
@@ -52,6 +91,19 @@ export const mockQueueEntries: QueueEntry[] = [
     reminderMethod: 'SMS',
     designatedConsultantId: 'con002',
     project: '鼻部综合修复',
+    manualSortWeight: 1500,
+    manualAdjustment: {
+      adjustedBy: '李管家',
+      adjustedAt: new Date(now.getTime() - 5 * 60000),
+      reason: '指定顾问已结束上一位服务，优先安排',
+      type: 'TOP',
+    },
+    privacyNotes: '明星顾客，戴墨镜和口罩，请安排独立包间',
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 18, operator: '李管家' },
+      { type: 'QUEUE_ADJUSTED', desc: '已置顶', minsAgo: 5, operator: '李管家', details: '指定顾问已结束上一位服务' },
+      { type: 'CONSULTANT_PREPARE', desc: '顾问准备中', minsAgo: 3, operator: '李管家' },
+    ]),
   },
   {
     id: 'q004',
@@ -59,6 +111,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'WAITING',
     teaStatus: 'NOT_PREPARED',
     checkinTime: new Date(now.getTime() - 12 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 30 * 60000),
     waitTime: 12,
     position: 2,
     isStandby: false,
@@ -66,6 +119,10 @@ export const mockQueueEntries: QueueEntry[] = [
     extensionMinutes: 0,
     reminderMethod: 'HEADSET',
     project: '颌面整形咨询',
+    manualSortWeight: 0,
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 12, operator: '王管家' },
+    ]),
   },
   {
     id: 'q005',
@@ -74,6 +131,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'WAITING',
     teaStatus: 'PREPARING',
     checkinTime: new Date(now.getTime() - 8 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 45 * 60000),
     waitTime: 8,
     position: 3,
     isStandby: false,
@@ -82,6 +140,10 @@ export const mockQueueEntries: QueueEntry[] = [
     reminderMethod: 'SMS',
     appointmentId: 'apt003',
     project: '私密整形咨询',
+    manualSortWeight: 0,
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 8, operator: '张管家' },
+    ]),
   },
   {
     id: 'q006',
@@ -89,6 +151,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'WAITING',
     teaStatus: 'NOT_PREPARED',
     checkinTime: new Date(now.getTime() - 5 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 60 * 60000),
     waitTime: 5,
     position: 4,
     isStandby: false,
@@ -96,6 +159,10 @@ export const mockQueueEntries: QueueEntry[] = [
     extensionMinutes: 0,
     reminderMethod: 'HEADSET',
     project: '注射美容',
+    manualSortWeight: 0,
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 5, operator: '李管家' },
+    ]),
   },
   {
     id: 'q007',
@@ -103,6 +170,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'WAITING',
     teaStatus: 'DELIVERED',
     checkinTime: new Date(now.getTime() - 3 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 80 * 60000),
     waitTime: 3,
     position: 5,
     isStandby: true,
@@ -110,6 +178,17 @@ export const mockQueueEntries: QueueEntry[] = [
     extensionMinutes: 0,
     reminderMethod: 'NONE',
     project: '皮肤基础护理',
+    manualSortWeight: -500,
+    manualAdjustment: {
+      adjustedBy: '王管家',
+      adjustedAt: new Date(now.getTime() - 2 * 60000),
+      reason: '临时候补顾客，延后安排',
+      type: 'BACK',
+    },
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 3, operator: '王管家' },
+      { type: 'QUEUE_ADJUSTED', desc: '已延后', minsAgo: 2, operator: '王管家', details: '临时候补顾客' },
+    ]),
   },
   {
     id: 'q008',
@@ -117,6 +196,7 @@ export const mockQueueEntries: QueueEntry[] = [
     status: 'WAITING',
     teaStatus: 'NOT_PREPARED',
     checkinTime: new Date(now.getTime() - 1 * 60000),
+    estimatedStartTime: new Date(now.getTime() + 100 * 60000),
     waitTime: 1,
     position: 6,
     isStandby: true,
@@ -124,5 +204,9 @@ export const mockQueueEntries: QueueEntry[] = [
     extensionMinutes: 0,
     reminderMethod: 'NONE',
     project: '咨询了解',
+    manualSortWeight: 0,
+    timeline: createTimeline([
+      { type: 'CHECKIN', desc: '已到店签到', minsAgo: 1, operator: '张管家' },
+    ]),
   },
 ];

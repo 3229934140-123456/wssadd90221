@@ -55,6 +55,8 @@ export interface QueueEntry {
   teaStatus: TeaStatus;
   checkinTime: Date;
   estimatedStartTime?: Date;
+  estimatedEndTime?: Date;
+  serviceStartTime?: Date;
   waitTime: number;
   position: number;
   isStandby: boolean;
@@ -74,7 +76,33 @@ export interface QueueEntry {
     type: 'TOP' | 'BACK';
   };
   manualSortWeight?: number;
+  privacyNotes?: string;
+  timeline?: TimelineEvent[];
 }
+
+export interface TimelineEvent {
+  id: string;
+  type: TimelineEventType;
+  timestamp: Date;
+  operator?: string;
+  description: string;
+  details?: string;
+}
+
+export type TimelineEventType = 
+  | 'CHECKIN'
+  | 'VIEW_DETAILS'
+  | 'CONFIRM_CHECKIN'
+  | 'CONSULTANT_PREPARE'
+  | 'START_SERVICE'
+  | 'EXTENSION_REQUEST'
+  | 'EXTENSION_APPROVED'
+  | 'EXTENSION_REJECTED'
+  | 'TEA_DELIVERED'
+  | 'SILENT_CALLED'
+  | 'QUEUE_ADJUSTED'
+  | 'COMPLETE_SERVICE'
+  | 'SOOTHE_SERVICE';
 
 export interface Appointment {
   id: string;
@@ -98,6 +126,8 @@ export interface ServiceRecord {
   notes: string;
   createdAt: Date;
   actualDuration: number;
+  privacyNotes?: string;
+  timeline?: TimelineEvent[];
 }
 
 export interface SystemSettings {

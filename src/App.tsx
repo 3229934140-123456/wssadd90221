@@ -50,11 +50,12 @@ export default function App() {
           </ProtectedRoute>
         }>
           <Route index element={<DashboardHome />} />
-          <Route path="check-in" element={
-            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION']}>
+          <Route path="checkin" element={
+            <RoleRoute allowedRoles={['ADMIN', 'RECEPTION', 'RECEPTIONIST']}>
               <CheckInPage />
             </RoleRoute>
           } />
+          <Route path="check-in" element={<Navigate to="/dashboard/checkin" replace />} />
           <Route path="queue" element={
             <RoleRoute allowedRoles={['ADMIN', 'RECEPTION', 'RECEPTIONIST', 'CONSULTANT']}>
               <QueueManagement />

@@ -12,6 +12,8 @@ import type {
   QueueStatus,
   RoomStatus,
   TeaStatus,
+  TimelineEvent,
+  TimelineEventType,
 } from '@/types';
 import { mockCustomers } from '@/data/mockCustomers';
 import { mockConsultants } from '@/data/mockConsultants';
@@ -64,6 +66,11 @@ interface AppState {
   hasCheckedInAppointment: (appointmentId: string) => boolean;
   adjustQueuePosition: (queueEntryId: string, type: 'TOP' | 'BACK', reason: string) => void;
   updateAppointmentStatus: (appointmentId: string, status: 'PENDING' | 'CHECKED_IN' | 'CANCELLED') => void;
+  addTimelineEvent: (queueEntryId: string, event: Omit<TimelineEvent, 'id' | 'timestamp'>) => void;
+  updatePrivacyNotes: (queueEntryId: string, notes: string) => void;
+  getNextWaitingEntry: (consultantId: string) => QueueEntry | null;
+  recalculateEstimatedTimes: () => void;
+  getTimelineForEntry: (queueEntryId: string) => TimelineEvent[];
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -107,6 +114,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       extensionMinutes: 0,
       isSilentCalled: false,
       manualSortWeight: 0,
+      timeline: [
+        {
+          id: `tl_${Date.now()}_checkin`,
+          type: 'CHECKIN',
+          timestamp: new Date(),
+          description: '已到店签到',
+          operator: get().currentUser?.name,
+        },
+      ],
     };
     
     if (entry.appointmentId) {
@@ -116,20 +132,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(state => {
       const newEntries = [...state.queueEntries, newEntry];
       const sorted = sortQueue(newEntries, state.customers, state.appointments);
-      return { queueEntries: newEntries.map(e => {
+      const finalEntries = newEntries.map(e => {
         const sortedEntry = sorted.find(s => s.id === e.id);
         return sortedEntry ? { ...e, position: sortedEntry.position } : e;
-      })};
+      });
+      return { queueEntries: finalEntries };
     });
+    
+    setTimeout(() => get().recalculateEstimatedTimes(), 0);
     
     return newEntry;
   },
 
   updateQueueStatus: (id, status) => {
+    const standardMinutes = get().settings.standardConsultationMinutes;
+    const now = new Date();
+    
+    let timelineType: TimelineEventType | null = null;
+    let timelineDesc = '';
+    
+    if (status === 'CONSULTANT_PREPARING') {
+      timelineType = 'CONSULTANT_PREPARE';
+      timelineDesc = '顾问准备中';
+    } else if (status === 'IN_SERVICE') {
+      timelineType = 'START_SERVICE';
+      timelineDesc = '进入服务';
+    } else if (status === 'COMPLETED') {
+      timelineType = 'COMPLETE_SERVICE';
+      timelineDesc = '服务完成';
+    }
+    
     set(state => ({
-      queueEntries: state.queueEntries.map(e =>
-        e.id === id ? { ...e, status } : e
-      ),
+      queueEntries: state.queueEntries.map(e => {
+        if (e.id === id) {
+          const updated = { ...e, status };
+          
+          if (status === 'IN_SERVICE') {
+            updated.serviceStartTime = now;
+            updated.estimatedEndTime = new Date(now.getTime() + standardMinutes * 60000);
+          }
+          
+          if (timelineType) {
+            updated.timeline = [...e.timeline, {
+              id: `tl_${Date.now()}_${timelineType}`,
+              type: timelineType,
+              timestamp: now,
+              description: timelineDesc,
+              operator: get().currentUser?.name,
+            }];
+          }
+          
+          return updated;
+        }
+        return e;
+      }),
     }));
     
     if (status === 'IN_SERVICE') {
@@ -148,6 +204,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           ),
         }));
       }
+    }
+    
+    if (status === 'IN_SERVICE' || status === 'COMPLETED') {
+      setTimeout(() => get().recalculateEstimatedTimes(), 0);
     }
   },
 
@@ -194,6 +254,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   requestExtension: (id, minutes, reason) => {
     const consultantName = get().currentUser?.name || '咨询顾问';
+    const now = new Date();
     
     set(state => ({
       queueEntries: state.queueEntries.map(e =>
@@ -202,6 +263,14 @@ export const useAppStore = create<AppState>((set, get) => ({
           extensionMinutes: minutes, 
           extensionReason: reason,
           extensionStatus: 'PENDING',
+          timeline: [...e.timeline, {
+            id: `tl_${Date.now()}_ext_req`,
+            type: 'EXTENSION_REQUEST',
+            timestamp: now,
+            description: `申请延长${minutes}分钟`,
+            operator: consultantName,
+            details: reason,
+          }],
         } : e
       ),
     }));
@@ -231,17 +300,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     const handlerName = get().currentUser?.name || '前台管家';
     const entry = get().queueEntries.find(e => e.id === queueEntryId);
     const customer = entry ? get().getCustomerById(entry.customerId) : null;
+    const now = new Date();
     
     set(state => ({
-      queueEntries: state.queueEntries.map(e =>
-        e.id === queueEntryId ? {
-          ...e,
-          extensionStatus: result,
-          extensionHandledBy: handlerName,
-          extensionMinutes: result === 'APPROVED' ? e.extensionMinutes : 0,
-          extensionReason: result === 'APPROVED' ? e.extensionReason : undefined,
-        } : e
-      ),
+      queueEntries: state.queueEntries.map(e => {
+        if (e.id === queueEntryId) {
+          const updated = {
+            ...e,
+            extensionStatus: result,
+            extensionHandledBy: handlerName,
+            extensionMinutes: result === 'APPROVED' ? e.extensionMinutes : 0,
+            extensionReason: result === 'APPROVED' ? e.extensionReason : undefined,
+          };
+          
+          const timelineType = result === 'APPROVED' ? 'EXTENSION_APPROVED' : 'EXTENSION_REJECTED';
+          updated.timeline = [...e.timeline, {
+            id: `tl_${Date.now()}_${timelineType}`,
+            type: timelineType,
+            timestamp: now,
+            description: `延长申请已${result === 'APPROVED' ? '同意' : '驳回'}`,
+            operator: handlerName,
+            details: result === 'APPROVED' ? `延长${e.extensionMinutes}分钟` : e.extensionReason,
+          }];
+          
+          if (result === 'APPROVED' && e.estimatedEndTime) {
+            updated.estimatedEndTime = new Date(e.estimatedEndTime.getTime() + e.extensionMinutes * 60000);
+          }
+          
+          return updated;
+        }
+        return e;
+      }),
       notifications: state.notifications.map(n =>
         n.id === notificationId ? {
           ...n,
@@ -254,6 +343,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
     
+    if (result === 'APPROVED') {
+      setTimeout(() => get().recalculateEstimatedTimes(), 0);
+    }
+    
     get().addNotification({
       type: result === 'APPROVED' ? 'SUCCESS' : 'INFO',
       message: `延长申请已${result === 'APPROVED' ? '同意' : '驳回'}：「${customer?.codeName || '贵宾'}」`,
@@ -262,10 +355,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   completeService: (id, record) => {
+    const entry = get().queueEntries.find(e => e.id === id);
     const newRecord: ServiceRecord = {
       ...record,
       id: `rec${Date.now()}`,
       createdAt: new Date(),
+      privacyNotes: entry?.privacyNotes,
+      timeline: entry?.timeline,
     };
     
     set(state => ({
@@ -275,17 +371,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       serviceRecords: [...state.serviceRecords, newRecord],
     }));
     
-    const entry = get().queueEntries.find(e => e.id === id);
-    if (entry?.consultantId) {
+    const entryData = get().queueEntries.find(e => e.id === id);
+    if (entryData?.consultantId) {
       set(state => ({
         consultants: state.consultants.map(c =>
-          c.id === entry.consultantId ? { ...c, status: 'IDLE', currentLoad: Math.max(0, c.currentLoad - 1), servedToday: c.servedToday + 1 } : c
+          c.id === entryData.consultantId ? { ...c, status: 'IDLE', currentLoad: Math.max(0, c.currentLoad - 1), servedToday: c.servedToday + 1 } : c
         ),
       }));
     }
-    if (entry?.roomId) {
-      get().updateRoomStatus(entry.roomId, 'CLEANING', 0);
+    if (entryData?.roomId) {
+      get().updateRoomStatus(entryData.roomId, 'CLEANING', 0);
     }
+    
+    setTimeout(() => get().recalculateEstimatedTimes(), 0);
   },
 
   updateRoomStatus: (roomId, status, progress) => {
@@ -400,21 +498,39 @@ export const useAppStore = create<AppState>((set, get) => ({
     const handlerName = get().currentUser?.name || '前台管家';
     const entry = get().queueEntries.find(e => e.id === queueEntryId);
     const customer = entry ? get().getCustomerById(entry.customerId) : null;
+    const now = new Date();
     
-    const maxWeight = Math.max(...get().queueEntries.map(e => e.manualSortWeight || 0), 0);
+    const waitingEntries = get().getWaitingQueue();
+    
+    let newWeight = 0;
+    if (type === 'TOP') {
+      const maxWeight = Math.max(...waitingEntries.map(e => e.manualSortWeight || 0), 0);
+      newWeight = maxWeight + 1000;
+    } else {
+      const minWeight = Math.min(...waitingEntries.map(e => e.manualSortWeight || 0), 0);
+      newWeight = minWeight - 1000;
+    }
     
     set(state => ({
       queueEntries: state.queueEntries.map(e => {
         if (e.id === queueEntryId) {
           return {
             ...e,
-            manualSortWeight: type === 'TOP' ? maxWeight + 1000 : -1000,
+            manualSortWeight: newWeight,
             manualAdjustment: {
               adjustedBy: handlerName,
-              adjustedAt: new Date(),
+              adjustedAt: now,
               reason,
               type,
             },
+            timeline: [...e.timeline, {
+              id: `tl_${Date.now()}_queue_adj`,
+              type: 'QUEUE_ADJUSTED',
+              timestamp: now,
+              description: type === 'TOP' ? '已置顶' : '已延后',
+              operator: handlerName,
+              details: reason,
+            }],
           };
         }
         return e;
@@ -431,6 +547,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
     
+    setTimeout(() => get().recalculateEstimatedTimes(), 0);
+    
     get().addNotification({
       type: 'INFO',
       message: `队列顺序已调整：「${customer?.codeName || '贵宾'}」${type === 'TOP' ? '置顶' : '延后'}，原因：${reason}`,
@@ -446,5 +564,96 @@ export const useAppStore = create<AppState>((set, get) => ({
         a.id === appointmentId ? { ...a, status } : a
       ),
     }));
+  },
+
+  addTimelineEvent: (queueEntryId, event) => {
+    const now = new Date();
+    set(state => ({
+      queueEntries: state.queueEntries.map(e =>
+        e.id === queueEntryId ? {
+          ...e,
+          timeline: [...e.timeline, {
+            ...event,
+            id: `tl_${Date.now()}_${event.type}`,
+            timestamp: now,
+          }],
+        } : e
+      ),
+    }));
+  },
+
+  updatePrivacyNotes: (queueEntryId, notes) => {
+    set(state => ({
+      queueEntries: state.queueEntries.map(e =>
+        e.id === queueEntryId ? { ...e, privacyNotes: notes } : e
+      ),
+    }));
+  },
+
+  getNextWaitingEntry: (consultantId) => {
+    const waiting = get().getWaitingQueue();
+    return waiting.find(e => 
+      !e.designatedConsultantId || e.designatedConsultantId === consultantId
+    ) || null;
+  },
+
+  recalculateEstimatedTimes: () => {
+    const state = get();
+    const standardMinutes = state.settings.standardConsultationMinutes;
+    const waitingQueue = state.getWaitingQueue();
+    const inServiceEntries = state.getInServiceEntries();
+    
+    const consultantEndTimes: Record<string, Date> = {};
+    inServiceEntries.forEach(entry => {
+      if (entry.consultantId && entry.estimatedEndTime) {
+        consultantEndTimes[entry.consultantId] = entry.estimatedEndTime;
+      }
+    });
+    
+    const now = new Date();
+    
+    set(s => ({
+      queueEntries: s.queueEntries.map(e => {
+        if (e.status !== 'WAITING' && e.status !== 'CONSULTANT_PREPARING') return e;
+        
+        const consultantId = e.consultantId || e.designatedConsultantId;
+        let baseTime = now;
+        
+        if (consultantId && consultantEndTimes[consultantId]) {
+          baseTime = consultantEndTimes[consultantId];
+        } else {
+          const inServiceForConsultant = inServiceEntries.filter(
+            s => s.consultantId === consultantId
+          );
+          if (inServiceForConsultant.length > 0) {
+            const latestEnd = new Date(Math.max(
+              ...inServiceForConsultant.map(s => s.estimatedEndTime?.getTime() || now.getTime())
+            ));
+            baseTime = latestEnd;
+            if (consultantId) {
+              consultantEndTimes[consultantId] = latestEnd;
+            }
+          }
+        }
+        
+        const estimatedStart = new Date(baseTime.getTime());
+        const estimatedEnd = new Date(baseTime.getTime() + standardMinutes * 60000);
+        
+        if (consultantId) {
+          consultantEndTimes[consultantId] = estimatedEnd;
+        }
+        
+        return {
+          ...e,
+          estimatedStartTime: estimatedStart,
+          estimatedEndTime: estimatedEnd,
+        };
+      }),
+    }));
+  },
+
+  getTimelineForEntry: (queueEntryId) => {
+    const entry = get().queueEntries.find(e => e.id === queueEntryId);
+    return entry?.timeline || [];
   },
 }));

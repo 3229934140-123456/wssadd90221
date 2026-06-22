@@ -22,6 +22,8 @@ const CheckInPage = () => {
     getConsultantById,
     addCustomer,
     hasCheckedInAppointment,
+    addTimelineEvent,
+    updatePrivacyNotes,
   } = useAppStore();
 
   const [searchType, setSearchType] = useState<'member' | 'appointment' | 'standby'>('member');
@@ -44,7 +46,10 @@ const CheckInPage = () => {
 
   const [checkinForm, setCheckinForm] = useState({
     reminderMethod: 'HEADSET' as ReminderMethod,
+    privacyNotes: '',
   });
+
+  const [pendingEntryId, setPendingEntryId] = useState<string | null>(null);
 
   const handleSearch = () => {
     setError('');
@@ -56,7 +61,7 @@ const CheckInPage = () => {
       const customer = findCustomerByMemberId(searchValue);
       if (customer) {
         setFoundCustomer(customer);
-        setCheckinForm({ reminderMethod: 'HEADSET' });
+        setCheckinForm({ reminderMethod: 'HEADSET', privacyNotes: '' });
       } else {
         setError('未找到该会员信息');
       }
@@ -72,7 +77,7 @@ const CheckInPage = () => {
         const customer = getCustomerById(appointment.customerId);
         if (customer) {
           setFoundCustomer(customer);
-          setCheckinForm({ reminderMethod: 'HEADSET' });
+          setCheckinForm({ reminderMethod: 'HEADSET', privacyNotes: '' });
         }
       } else {
         setError('未找到该预约码');
@@ -82,6 +87,7 @@ const CheckInPage = () => {
 
   const openDetailDrawer = () => {
     setShowDetailDrawer(true);
+    setCheckinForm(prev => ({ ...prev, privacyNotes: '' }));
   };
 
   const handleCheckIn = (customer: Customer, appointmentId?: string, designatedConsultantId?: string) => {
@@ -103,7 +109,23 @@ const CheckInPage = () => {
       appointmentId,
       designatedConsultantId,
       project: projectInfo,
+      privacyNotes: searchType === 'standby' ? '' : checkinForm.privacyNotes,
     });
+
+    if (checkinForm.privacyNotes && searchType !== 'standby') {
+      addTimelineEvent(entry.id, {
+        type: 'CONFIRM_CHECKIN',
+        description: '确认签到（含隐私备注）',
+        operator: '前台管家',
+        details: checkinForm.privacyNotes,
+      });
+    } else {
+      addTimelineEvent(entry.id, {
+        type: 'CONFIRM_CHECKIN',
+        description: '确认签到',
+        operator: '前台管家',
+      });
+    }
 
     if (settings.autoAssignConsultant && idleConsultants.length > 0) {
       const consultant = idleConsultants.sort((a, b) => a.currentLoad - b.currentLoad)[0];
@@ -138,6 +160,10 @@ const CheckInPage = () => {
       teaPreference: '',
       project: '',
       reminderMethod: 'HEADSET',
+    });
+    setCheckinForm({
+      reminderMethod: 'HEADSET',
+      privacyNotes: '',
     });
 
     setTimeout(() => setSuccess(''), 3000);
@@ -316,7 +342,7 @@ const CheckInPage = () => {
                     <div className="text-ivory/40 text-sm mb-1">提醒方式</div>
                     <select
                       value={checkinForm.reminderMethod}
-                      onChange={(e) => setCheckinForm({ reminderMethod: e.target.value as ReminderMethod })}
+                      onChange={(e) => setCheckinForm({ ...checkinForm, reminderMethod: e.target.value as ReminderMethod })}
                       className="w-full bg-transparent text-ivory/80 focus:outline-none"
                     >
                       <option value="HEADSET">耳机提醒</option>
@@ -614,7 +640,7 @@ const CheckInPage = () => {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setCheckinForm({ reminderMethod: opt.value as ReminderMethod })}
+                      onClick={() => setCheckinForm({ ...checkinForm, reminderMethod: opt.value as ReminderMethod })}
                       className={`p-3 rounded-lg border transition-all text-center ${
                         checkinForm.reminderMethod === opt.value
                           ? 'bg-rose-gold/10 border-rose-gold/30 text-rose-gold'
@@ -626,6 +652,21 @@ const CheckInPage = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="p-5 bg-rose-gold/5 rounded-xl border border-rose-gold/20">
+                <label className="flex items-center gap-2 text-rose-gold text-sm font-light mb-2">
+                  <Shield className="w-4 h-4" />
+                  隐私交接备注
+                </label>
+                <textarea
+                  value={checkinForm.privacyNotes}
+                  onChange={(e) => setCheckinForm({ ...checkinForm, privacyNotes: e.target.value })}
+                  placeholder="请填写需要内部知晓的隐私信息、特殊需求或注意事项（仅内部可见）"
+                  rows={3}
+                  className="w-full bg-deep-space-dark/50 border border-rose-gold/20 rounded-lg p-3 text-ivory/70 text-sm focus:outline-none focus:border-rose-gold/50 placeholder:text-ivory/30 resize-none"
+                />
+                <p className="text-ivory/30 text-xs mt-2">* 此信息仅前台和顾问可见，接待屏不展示</p>
               </div>
             </div>
 

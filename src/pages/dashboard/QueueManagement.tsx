@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { 
   Phone, Headphones, Coffee, Clock, AlertTriangle, 
-  UserCheck, Gift, X, Pin, ArrowDown, CheckCircle2, XCircle, Clock3, AlertCircle, User
+  UserCheck, Gift, X, Pin, ArrowDown, CheckCircle2, XCircle, Clock3, AlertCircle, User,
+  Calendar, Shield, ChevronRight, Timer, Users, Info
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { getLevelBadge } from '@/utils/sortEngine';
-import { format } from 'date-fns';
-import type { TeaStatus } from '@/types';
+import { format, differenceInMinutes } from 'date-fns';
+import type { TeaStatus, TimelineEventType } from '@/types';
 
 const QueueManagement = () => {
   const {
@@ -24,6 +25,7 @@ const QueueManagement = () => {
     settings,
     adjustQueuePosition,
     currentUser,
+    recalculateEstimatedTimes,
   } = useAppStore();
 
   const [selectedEntry, setSelectedEntry] = useState<string | null>(null);
@@ -34,16 +36,21 @@ const QueueManagement = () => {
   const [adjustType, setAdjustType] = useState<'TOP' | 'BACK'>('TOP');
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustEntryId, setAdjustEntryId] = useState('');
+  const [, forceUpdate] = useState(0);
 
-  const waitingQueue = getSortedQueue();
+  const isReception = currentUser?.role === 'ADMIN' || currentUser?.role === 'RECEPTION' || currentUser?.role === 'RECEPTIONIST';
+
+  const waitingQueue = getSortedQueue().filter(e => e.status === 'WAITING' || e.status === 'CONSULTANT_PREPARING');
   const inServiceEntries = getInServiceEntries();
 
   useEffect(() => {
-    const timer = setInterval(updateWaitTimes, 60000);
+    recalculateEstimatedTimes();
+    const timer = setInterval(() => {
+      updateWaitTimes();
+      forceUpdate(n => n + 1);
+    }, 60000);
     return () => clearInterval(timer);
-  }, [updateWaitTimes]);
-
-  const isReception = currentUser?.role === 'ADMIN' || currentUser?.role === 'RECEPTION' || currentUser?.role === 'RECEPTIONIST';
+  }, [updateWaitTimes, recalculateEstimatedTimes]);
 
   const openAdjustModal = (entryId: string, type: 'TOP' | 'BACK') => {
     setAdjustEntryId(entryId);
@@ -147,6 +154,95 @@ const QueueManagement = () => {
     }
   };
 
+  const getTimelineIcon = (type: TimelineEventType) => {
+    switch (type) {
+      case 'CHECKIN': return <UserCheck className="w-3 h-3" />;
+      case 'VIEW_DETAILS': return <Info className="w-3 h-3" />;
+      case 'CONFIRM_CHECKIN': return <CheckCircle2 className="w-3 h-3" />;
+      case 'CONSULTANT_PREPARE': return <User className="w-3 h-3" />;
+      case 'START_SERVICE': return <Coffee className="w-3 h-3" />;
+      case 'EXTENSION_REQUEST': return <Clock className="w-3 h-3" />;
+      case 'EXTENSION_APPROVED': return <CheckCircle2 className="w-3 h-3" />;
+      case 'EXTENSION_REJECTED': return <XCircle className="w-3 h-3" />;
+      case 'TEA_DELIVERED': return <Coffee className="w-3 h-3" />;
+      case 'SILENT_CALLED': return <Headphones className="w-3 h-3" />;
+      case 'QUEUE_ADJUSTED': return <ArrowDown className="w-3 h-3" />;
+      case 'COMPLETE_SERVICE': return <CheckCircle2 className="w-3 h-3" />;
+      case 'SOOTHE_SERVICE': return <Gift className="w-3 h-3" />;
+      default: return <Clock className="w-3 h-3" />;
+    }
+  };
+
+  const getTimelineColor = (type: TimelineEventType) => {
+    switch (type) {
+      case 'CHECKIN':
+      case 'CONFIRM_CHECKIN':
+      case 'START_SERVICE':
+      case 'COMPLETE_SERVICE':
+        return 'bg-matcha/20 text-matcha border-matcha/30';
+      case 'CONSULTANT_PREPARE':
+        return 'bg-rose-gold/20 text-rose-gold border-rose-gold/30';
+      case 'EXTENSION_REQUEST':
+        return 'bg-warm-gold/20 text-warm-gold border-warm-gold/30';
+      case 'EXTENSION_APPROVED':
+        return 'bg-matcha/20 text-matcha border-matcha/30';
+      case 'EXTENSION_REJECTED':
+        return 'bg-rose-red/20 text-rose-red border-rose-red/30';
+      case 'QUEUE_ADJUSTED':
+        return 'bg-slate-blue/20 text-slate-blue border-slate-blue/30';
+      case 'SOOTHE_SERVICE':
+        return 'bg-warm-gold/20 text-warm-gold border-warm-gold/30';
+      default:
+        return 'bg-deep-space-dark/50 text-ivory/60 border-ivory/10';
+    }
+  };
+
+  const getServiceTimeInfo = (entry: any) => {
+    const now = new Date();
+    const standardMinutes = settings.standardConsultationMinutes;
+    
+    if (!entry.serviceStartTime) {
+      return {
+        statusText: '等待服务开始',
+        statusColor: 'text-ivory/40',
+        estimatedEnd: null,
+        isOverTime: false,
+        overMinutes: 0,
+        progress: 0,
+      };
+    }
+
+    const start = new Date(entry.serviceStartTime);
+    const totalScheduledMinutes = standardMinutes + (entry.extensionStatus === 'APPROVED' ? entry.extensionMinutes : 0);
+    const elapsedMinutes = differenceInMinutes(now, start);
+    const progress = Math.min(100, (elapsedMinutes / totalScheduledMinutes) * 100);
+    
+    let estimatedEnd: Date | null = null;
+    if (entry.estimatedEndTime) {
+      estimatedEnd = new Date(entry.estimatedEndTime);
+    } else {
+      estimatedEnd = new Date(start.getTime() + totalScheduledMinutes * 60000);
+    }
+    
+    const isOverTime = elapsedMinutes > totalScheduledMinutes && entry.extensionStatus !== 'PENDING';
+    const overMinutes = isOverTime ? elapsedMinutes - totalScheduledMinutes : 0;
+
+    return {
+      statusText: isOverTime ? `已超时 ${overMinutes} 分钟` : '服务中',
+      statusColor: isOverTime ? 'text-rose-red' : 'text-matcha',
+      estimatedEnd,
+      isOverTime,
+      overMinutes,
+      progress,
+    };
+  };
+
+  const getNextWaitingForConsultant = (consultantId: string) => {
+    return waitingQueue.find(e => 
+      !e.designatedConsultantId || e.designatedConsultantId === consultantId
+    ) || null;
+  };
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="grid grid-cols-2 gap-8">
@@ -156,7 +252,7 @@ const QueueManagement = () => {
             <span className="text-ivory/40 text-sm">共 {waitingQueue.length} 位</span>
           </div>
 
-          <div className="space-y-4 max-h-[600px] overflow-y-auto scrollbar-hide pr-2">
+          <div className="space-y-4 max-h-[700px] overflow-y-auto scrollbar-hide pr-2">
             {waitingQueue.length === 0 ? (
               <div className="text-center py-16 text-ivory/40">
                 暂无等候顾客
@@ -244,6 +340,11 @@ const QueueManagement = () => {
                             <p className="text-ivory/40 text-xs mt-1">
                               {format(entry.checkinTime, 'HH:mm')} 签到
                             </p>
+                            {entry.estimatedStartTime && (
+                              <p className="text-matcha/60 text-xs mt-0.5">
+                                预计 {format(new Date(entry.estimatedStartTime), 'HH:mm')} 开始
+                              </p>
+                            )}
                           </div>
                           <div className={`px-3 py-1 rounded-full text-xs ${
                             entry.status === 'CONSULTANT_PREPARING'
@@ -295,6 +396,16 @@ const QueueManagement = () => {
                           </div>
                         </div>
 
+                        {entry.privacyNotes && (
+                          <div className="mb-4 p-3 bg-rose-gold/5 border border-rose-gold/20 rounded-lg">
+                            <div className="flex items-center gap-2 text-rose-gold text-xs mb-2">
+                              <Shield className="w-3 h-3" />
+                              <span>隐私交接备注</span>
+                            </div>
+                            <p className="text-ivory/70 text-sm">{entry.privacyNotes}</p>
+                          </div>
+                        )}
+
                         {isReception && (
                           <div className="mb-4 p-3 bg-deep-space-dark/30 rounded-lg">
                             <p className="text-ivory/40 text-xs mb-2 flex items-center gap-1">
@@ -316,6 +427,36 @@ const QueueManagement = () => {
                                 <ArrowDown className="w-4 h-4" />
                                 <span>延后</span>
                               </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {entry.timeline && entry.timeline.length > 0 && (
+                          <div className="mb-4 p-3 bg-deep-space-dark/30 rounded-lg">
+                            <p className="text-ivory/40 text-xs mb-3 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              今日接待时间线
+                            </p>
+                            <div className="space-y-2">
+                              {entry.timeline.slice().reverse().map((event: any) => (
+                                <div key={event.id} className="flex items-start gap-3">
+                                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${getTimelineColor(event.type)}`}>
+                                    {getTimelineIcon(event.type)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-ivory/80 text-sm">{event.description}</p>
+                                      <p className="text-ivory/40 text-xs">{format(new Date(event.timestamp), 'HH:mm')}</p>
+                                    </div>
+                                    {event.operator && (
+                                      <p className="text-ivory/40 text-xs mt-0.5">操作人：{event.operator}</p>
+                                    )}
+                                    {event.details && (
+                                      <p className="text-ivory/50 text-xs mt-0.5 truncate">{event.details}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -379,7 +520,7 @@ const QueueManagement = () => {
             <span className="text-ivory/40 text-sm">共 {inServiceEntries.length} 位</span>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[700px] overflow-y-auto scrollbar-hide pr-2">
             {inServiceEntries.length === 0 ? (
               <div className="text-center py-16 text-ivory/40">
                 暂无进行中的服务
@@ -390,105 +531,208 @@ const QueueManagement = () => {
                 const consultant = entry.consultantId ? getConsultantById(entry.consultantId) : null;
                 const room = entry.roomId ? getRoomById(entry.roomId) : null;
                 const levelBadge = customer ? getLevelBadge(customer.level) : null;
+                const timeInfo = getServiceTimeInfo(entry);
+                const nextEntry = entry.consultantId ? getNextWaitingForConsultant(entry.consultantId) : null;
+                const nextCustomer = nextEntry ? getCustomerById(nextEntry.customerId) : null;
+                const isExpanded = selectedEntry === entry.id;
 
                 return (
                   <div
                     key={entry.id}
-                    className="p-5 rounded-xl bg-deep-space-dark/50 border border-rose-gold/10 animate-slide-up"
-                    style={{ animationDelay: `${0.1 * index}s` }}
+                    className={`rounded-xl overflow-hidden transition-all duration-300 ${
+                      timeInfo.isOverTime ? 'ring-2 ring-rose-red/50' : ''
+                    }`}
                   >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-3 h-3 rounded-full bg-matcha animate-pulse-soft" />
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-ivory/90 font-serif text-lg">
-                              {customer?.codeName || '尊贵嘉宾'}
-                            </span>
-                            {levelBadge && (
-                              <span className={`px-2 py-0.5 rounded-full text-xs ${levelBadge.color}`}>
-                                {levelBadge.text}
+                    <div
+                      onClick={() => setSelectedEntry(isExpanded ? null : entry.id)}
+                      className="p-5 bg-deep-space-dark/50 border border-rose-gold/10 cursor-pointer hover:bg-deep-space-dark/30 transition-colors animate-slide-up"
+                      style={{ animationDelay: `${0.1 * index}s` }}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-4">
+                          <div className="w-3 h-3 rounded-full bg-matcha animate-pulse-soft" />
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-ivory/90 font-serif text-lg">
+                                {customer?.codeName || '尊贵嘉宾'}
                               </span>
+                              {levelBadge && (
+                                <span className={`px-2 py-0.5 rounded-full text-xs ${levelBadge.color}`}>
+                                  {levelBadge.text}
+                                </span>
+                              )}
+                              {entry.extensionStatus && getExtensionStatusBadge(entry.extensionStatus)}
+                            </div>
+                            <p className="text-ivory/40 text-sm mt-1">
+                              {consultant?.name} · {room?.name || '包间'}
+                            </p>
+                            {entry.extensionHandledBy && entry.extensionStatus !== 'PENDING' && (
+                              <p className="text-ivory/30 text-xs mt-0.5">
+                                由 {entry.extensionHandledBy} {entry.extensionStatus === 'APPROVED' ? '同意' : '驳回'}
+                              </p>
                             )}
-                            {entry.extensionStatus && getExtensionStatusBadge(entry.extensionStatus)}
                           </div>
-                          <p className="text-ivory/40 text-sm mt-1">
-                            {consultant?.name} · {room?.name || '包间'}
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-medium ${timeInfo.statusColor}`}>
+                            {timeInfo.statusText}
                           </p>
-                          {entry.extensionHandledBy && entry.extensionStatus !== 'PENDING' && (
+                          {timeInfo.estimatedEnd && (
+                            <p className="text-ivory/40 text-xs mt-1">
+                              预计 {format(timeInfo.estimatedEnd, 'HH:mm')} 结束
+                            </p>
+                          )}
+                          {entry.serviceStartTime && (
                             <p className="text-ivory/30 text-xs mt-0.5">
-                              由 {entry.extensionHandledBy} {entry.extensionStatus === 'APPROVED' ? '同意' : '驳回'}
+                              {format(new Date(entry.serviceStartTime), 'HH:mm')} 开始
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-ivory/60 text-sm">
-                          开始 {format(entry.checkinTime, 'HH:mm')}
-                        </p>
-                        {entry.extensionMinutes > 0 && entry.extensionStatus === 'APPROVED' && (
-                          <p className="text-matcha text-xs mt-1">
-                            已延长 {entry.extensionMinutes} 分钟
-                          </p>
-                        )}
-                        {entry.extensionStatus === 'PENDING' && (
-                          <p className="text-warm-gold text-xs mt-1">
-                            申请延长 {entry.extensionMinutes} 分钟
-                          </p>
-                        )}
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-3 pt-4 border-t border-rose-gold/10">
-                      <div className="flex-1">
-                        <p className="text-ivory/40 text-xs mb-1">咨询项目</p>
-                        <p className="text-ivory/80 text-sm">
-                          {customer?.isSensitive ? '***' : entry.project || '未指定'}
-                        </p>
-                      </div>
-                      {entry.extensionStatus !== 'REJECTED' && (
-                        <button
-                          onClick={() => {
-                            setSelectedEntry(entry.id);
-                            setShowExtensionModal(true);
-                          }}
-                          disabled={entry.extensionStatus === 'PENDING'}
-                          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
-                            entry.extensionStatus === 'PENDING'
-                              ? 'bg-warm-gold/5 text-warm-gold/60 cursor-not-allowed'
-                              : 'bg-warm-gold/10 text-warm-gold hover:bg-warm-gold/20'
-                          }`}
-                        >
-                          <Clock className="w-4 h-4" />
-                          <span>{entry.extensionStatus === 'PENDING' ? '处理中' : '申请延长'}</span>
-                        </button>
+                      {entry.serviceStartTime && (
+                        <div className="h-1.5 bg-deep-space-dark/50 rounded-full overflow-hidden mb-4">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              timeInfo.isOverTime ? 'bg-rose-red' : 'bg-gradient-to-r from-rose-gold to-warm-gold'
+                            }`}
+                            style={{ width: `${timeInfo.progress}%` }}
+                          />
+                        </div>
                       )}
-                    </div>
 
-                    {(entry.extensionReason || entry.extensionStatus === 'PENDING') && (
-                      <div className={`mt-3 p-3 rounded-lg ${
-                        entry.extensionStatus === 'REJECTED' 
-                          ? 'bg-rose-red/5 border border-rose-red/20'
-                          : 'bg-warm-gold/5 border border-warm-gold/20'
-                      }`}>
-                        <div className="flex items-center justify-between mb-1">
-                          <p className={`text-xs ${
-                            entry.extensionStatus === 'REJECTED' ? 'text-rose-red/60' : 'text-ivory/40'
-                          }`}>
-                            延长原因
-                          </p>
-                          {entry.extensionStatus === 'PENDING' && (
-                            <span className="text-xs text-warm-gold/70 flex items-center gap-1">
-                              <Clock3 className="w-3 h-3" />
-                              等待前台处理
+                      {entry.extensionMinutes > 0 && entry.extensionStatus === 'APPROVED' && (
+                        <p className="text-matcha text-xs">
+                          已延长 {entry.extensionMinutes} 分钟
+                        </p>
+                      )}
+                      {entry.extensionStatus === 'PENDING' && (
+                        <p className="text-warm-gold text-xs">
+                          申请延长 {entry.extensionMinutes} 分钟
+                        </p>
+                      )}
+
+                      {nextCustomer && (
+                        <div className="mt-3 pt-3 border-t border-rose-gold/10 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-slate-blue/60" />
+                            <span className="text-ivory/40 text-sm">下一位候客：</span>
+                            <span className="text-ivory/70 text-sm">{nextCustomer.codeName}</span>
+                          </div>
+                          {nextEntry?.estimatedStartTime && (
+                            <span className="text-matcha/60 text-xs">
+                              约 {format(new Date(nextEntry.estimatedStartTime), 'HH:mm')}
                             </span>
                           )}
                         </div>
-                        <p className={`text-sm ${
-                          entry.extensionStatus === 'REJECTED' ? 'text-rose-red/80' : 'text-ivory/70'
-                        }`}>
-                          {entry.extensionReason}
-                        </p>
+                      )}
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-5 pb-4 border-t border-rose-gold/10 pt-4 bg-deep-space-dark/30 animate-fade-in">
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="p-3 bg-deep-space-dark/50 rounded-lg">
+                            <div className="text-ivory/40 text-xs mb-1">咨询项目</div>
+                            <p className="text-ivory/80 text-sm">
+                              {customer?.isSensitive ? '***' : entry.project || '未指定'}
+                            </p>
+                          </div>
+                          <div className="p-3 bg-deep-space-dark/50 rounded-lg">
+                            <div className="text-ivory/40 text-xs mb-1">茶点状态</div>
+                            <p className="text-ivory/80 text-sm">
+                              {entry.teaStatus === 'DELIVERED' ? '已送达' : 
+                               entry.teaStatus === 'PREPARING' ? '准备中' : '未准备'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {entry.privacyNotes && (
+                          <div className="mb-4 p-3 bg-rose-gold/5 border border-rose-gold/20 rounded-lg">
+                            <div className="flex items-center gap-2 text-rose-gold text-xs mb-2">
+                              <Shield className="w-3 h-3" />
+                              <span>隐私交接备注</span>
+                            </div>
+                            <p className="text-ivory/70 text-sm">{entry.privacyNotes}</p>
+                          </div>
+                        )}
+
+                        {(entry.extensionReason || entry.extensionStatus === 'PENDING') && (
+                          <div className={`mb-4 p-3 rounded-lg ${
+                            entry.extensionStatus === 'REJECTED' 
+                              ? 'bg-rose-red/5 border border-rose-red/20'
+                              : 'bg-warm-gold/5 border border-warm-gold/20'
+                          }`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <p className={`text-xs ${
+                                entry.extensionStatus === 'REJECTED' ? 'text-rose-red/60' : 'text-ivory/40'
+                              }`}>
+                                延长原因
+                              </p>
+                              {entry.extensionStatus === 'PENDING' && (
+                                <span className="text-xs text-warm-gold/70 flex items-center gap-1">
+                                  <Clock3 className="w-3 h-3" />
+                                  等待前台处理
+                                </span>
+                              )}
+                            </div>
+                            <p className={`text-sm ${
+                              entry.extensionStatus === 'REJECTED' ? 'text-rose-red/80' : 'text-ivory/70'
+                            }`}>
+                              {entry.extensionReason}
+                            </p>
+                          </div>
+                        )}
+
+                        {entry.timeline && entry.timeline.length > 0 && (
+                          <div className="mb-4 p-3 bg-deep-space-dark/50 rounded-lg">
+                            <p className="text-ivory/40 text-xs mb-3 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              今日接待时间线
+                            </p>
+                            <div className="space-y-2 max-h-40 overflow-y-auto">
+                              {entry.timeline.slice().reverse().map((event: any) => (
+                                <div key={event.id} className="flex items-start gap-3">
+                                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${getTimelineColor(event.type)}`}>
+                                    {getTimelineIcon(event.type)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-ivory/80 text-sm">{event.description}</p>
+                                      <p className="text-ivory/40 text-xs">{format(new Date(event.timestamp), 'HH:mm')}</p>
+                                    </div>
+                                    {event.operator && (
+                                      <p className="text-ivory/40 text-xs mt-0.5">操作人：{event.operator}</p>
+                                    )}
+                                    {event.details && (
+                                      <p className="text-ivory/50 text-xs mt-0.5 truncate">{event.details}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end">
+                          {entry.extensionStatus !== 'REJECTED' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedEntry(entry.id);
+                                setShowExtensionModal(true);
+                              }}
+                              disabled={entry.extensionStatus === 'PENDING'}
+                              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
+                                entry.extensionStatus === 'PENDING'
+                                  ? 'bg-warm-gold/5 text-warm-gold/60 cursor-not-allowed'
+                                  : 'bg-warm-gold/10 text-warm-gold hover:bg-warm-gold/20'
+                              }`}
+                            >
+                              <Clock className="w-4 h-4" />
+                              <span>{entry.extensionStatus === 'PENDING' ? '处理中' : '申请延长'}</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
